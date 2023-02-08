@@ -1,115 +1,45 @@
-const express = require('express')
-const path = require('path')
-const bodyParser = require('body-parser')
-const mongoose = require('mongoose')
-const User = require('./model/user')
-const bcrypt = require('bcryptjs')
-const jwt = require('jsonwebtoken')
+// server.js
 
-const JWT_SECRET = 'sdjkfh8923yhjdksbfma@#*(&@*!^#&@bhjb2qiuhesdbhjdsfg839ujkdhfjk'
+// set up ======================================================================
+// get all the tools we need
+var express = require('express');
+var app = express();
+var port = process.env.PORT || 8080;
+var mongoose = require('mongoose');
+var passport = require('passport');
+var flash = require('connect-flash');
 
-mongodb://dblatt:dblattmoduldokumentation@ac-iavyjxn-shard-00-00.gseuyif.mongodb.net:27017,ac-iavyjxn-shard-00-01.gseuyif.mongodb.net:27017,ac-iavyjxn-shard-00-02.gseuyif.mongodb.net:27017/?ssl=true&replicaSet=atlas-v78mia-shard-0&authSource=admin&retryWrites=true&w=majority
+var configDB = require('./config/database.js');
 
-const app = express()
-app.use('/', express.static(path.join(__dirname, 'static')))
-app.use(bodyParser.json())
+// configuration ===============================================================
+mongoose.connect(
+  'mongodb://dblatt:dblattmoduldokumentation@ac-iavyjxn-shard-00-00.gseuyif.mongodb.net:27017,ac-iavyjxn-shard-00-01.gseuyif.mongodb.net:27017,ac-iavyjxn-shard-00-02.gseuyif.mongodb.net:27017/?ssl=true&replicaSet=atlas-v78mia-shard-0&authSource=admin&retryWrites=true&w=majority',
+  {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  }
+); // connect to our database
 
-app.post('/api/change-password', async (req, res) => {
-	const { token, newpassword: plainTextPassword } = req.body
+require('./config/passport')(passport); // pass passport for configuration
 
-	if (!plainTextPassword || typeof plainTextPassword !== 'string') {
-		return res.json({ status: 'error', error: 'Invalid password' })
-	}
+app.configure(function () {
+  // set up our express application
+  app.use(express.logger('dev')); // log every request to the console
+  app.use(express.cookieParser()); // read cookies (needed for auth)
+  app.use(express.bodyParser()); // get information from html forms
 
-	if (plainTextPassword.length < 5) {
-		return res.json({
-			status: 'error',
-			error: 'Password too small. Should be atleast 6 characters'
-		})
-	}
+  app.set('view engine', 'ejs'); // set up ejs for templating
 
-	try {
-		const user = jwt.verify(token, JWT_SECRET)
+  // required for passport
+  app.use(express.session({ secret: 'ilovescotchscotchyscotchscotch' })); // session secret
+  app.use(passport.initialize());
+  app.use(passport.session()); // persistent login sessions
+  app.use(flash()); // use connect-flash for flash messages stored in session
+});
 
-		const _id = user.id
+// routes ======================================================================
+require('./app/routes.js')(app, passport); // load our routes and pass in our app and fully configured passport
 
-		const password = await bcrypt.hash(plainTextPassword, 10)
-
-		await User.updateOne(
-			{ _id },
-			{
-				$set: { password }
-			}
-		)
-		res.json({ status: 'ok' })
-	} catch (error) {
-		console.log(error)
-		res.json({ status: 'error', error: ';))' })
-	}
-})
-
-app.post('/api/login', async (req, res) => {
-	const { username, password } = req.body
-	const user = await User.findOne({ username }).lean()
-
-	if (!user) {
-		return res.json({ status: 'error', error: 'Invalid username/password' })
-	}
-
-	if (await bcrypt.compare(password, user.password)) {
-		// the username, password combination is successful
-
-		const token = jwt.sign(
-			{
-				id: user._id,
-				username: user.username
-			},
-			JWT_SECRET
-		)
-
-		return res.json({ status: 'ok', data: token })
-	}
-
-	res.json({ status: 'error', error: 'Invalid username/password' })
-})
-
-app.post('/api/register', async (req, res) => {
-	const { username, password: plainTextPassword } = req.body
-
-	if (!username || typeof username !== 'string') {
-		return res.json({ status: 'error', error: 'Invalid username' })
-	}
-
-	if (!plainTextPassword || typeof plainTextPassword !== 'string') {
-		return res.json({ status: 'error', error: 'Invalid password' })
-	}
-
-	if (plainTextPassword.length < 5) {
-		return res.json({
-			status: 'error',
-			error: 'Password too small. Should be atleast 6 characters'
-		})
-	}
-
-	const password = await bcrypt.hash(plainTextPassword, 10)
-
-	try {
-		const response = await User.create({
-			username,
-			password
-		})
-		console.log('User created successfully: ', response)
-	} catch (error) {
-		if (error.code === 11000) {
-			// duplicate key
-			return res.json({ status: 'error', error: 'Username already in use' })
-		}
-		throw error
-	}
-
-	res.json({ status: 'ok' })
-})
-
-app.listen(9999, () => {
-	console.log('Server up at 9999')
-})
+// launch ======================================================================
+app.listen(port);
+console.log('The magic happens on port ' + port);
